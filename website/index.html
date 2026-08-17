@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Observable Serverless API — AWS CDK Sample</title>
+  <meta name="description" content="An educational AWS CDK sample teaching observability for serverless APIs: structured logs, custom metrics, dashboards, alarms, and runbooks." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <header class="site-nav">
+    <div class="wrap">
+      <div class="brand">Observable Serverless API</div>
+      <nav class="links">
+        <a href="#why">Why</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#logging">Logging</a>
+        <a href="#metrics">Metrics</a>
+        <a href="#dashboard">Dashboard</a>
+        <a href="#alarms">Alarms</a>
+        <a href="#runbooks">Runbooks</a>
+        <a href="#try-it">Try it</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 1. Hero -->
+  <section class="hero">
+    <div class="wrap">
+      <h1>Observability for a Serverless AWS API</h1>
+      <p class="subtitle">API Gateway → Lambda → CloudWatch → SNS</p>
+      <p class="lede">
+        Learn how structured logs, custom metrics, dashboards, alarms, and
+        operational runbooks turn a simple serverless API into something
+        operators can actually understand and support. The API itself is
+        deliberately tiny — three routes, one Lambda function. Observability
+        is the subject of this project.
+      </p>
+      <div class="tags">
+        <span class="tag">AWS CDK</span>
+        <span class="tag">API Gateway</span>
+        <span class="tag">Lambda</span>
+        <span class="tag">CloudWatch</span>
+        <span class="tag">SNS</span>
+        <span class="tag">TypeScript</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Why observability matters -->
+  <section id="why">
+    <div class="wrap">
+      <p class="eyebrow">Why it matters</p>
+      <h2>Deploying an API is not the same as operating one</h2>
+      <p class="section-intro">
+        It takes very little to stand up <code>Client → API Gateway → Lambda</code>.
+        It takes real design work to answer the questions an operator asks
+        the moment something looks wrong.
+      </p>
+      <div class="grid cols-3">
+        <div class="card"><h3>Is it available?</h3><p>Traffic and error metrics answer this in seconds, not by guessing.</p></div>
+        <div class="card"><h3>Is it failing?</h3><p>Lambda <code>Errors</code> and API Gateway <code>5XXError</code> should agree with each other.</p></div>
+        <div class="card"><h3>Is it getting slower?</h3><p>Latency and duration trends catch regressions before users complain.</p></div>
+        <div class="card"><h3>How much traffic?</h3><p><code>Count</code> and <code>Invocations</code> establish what "normal" looks like.</p></div>
+        <div class="card"><h3>Isolated or widespread?</h3><p>Per-route custom metrics separate a bad route from a bad deployment.</p></div>
+        <div class="card"><h3>Can operators diagnose it?</h3><p>Correlated, structured logs plus a runbook — not guesswork.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 & 4. Architecture + Request lifecycle -->
+  <section id="architecture">
+    <div class="wrap">
+      <p class="eyebrow">Architecture</p>
+      <h2>Request → telemetry → CloudWatch → alarm → operator</h2>
+      <p class="section-intro">
+        Every request produces two parallel streams of telemetry that both
+        land in CloudWatch, which feeds a dashboard for humans and alarms
+        for automated attention.
+      </p>
+
+      <div class="arch-diagram">
+        <div class="arch-node">Client</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-node">API Gateway</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-node">Lambda</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-branch">
+          <div class="branch-col">
+            <div class="arch-node">Structured Logs</div>
+          </div>
+          <div class="branch-col">
+            <div class="arch-node">Custom Metrics</div>
+          </div>
+        </div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-node accent">Amazon CloudWatch</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-branch">
+          <div class="branch-col">
+            <div class="arch-node">Dashboard</div>
+          </div>
+          <div class="branch-col">
+            <div class="arch-node">Alarms</div>
+            <div class="arch-arrow">↓</div>
+            <div class="arch-node">Amazon SNS</div>
+          </div>
+        </div>
+      </div>
+
+      <p class="note">
+        The dashboard does not trigger the alarms. Both are independent
+        consumers of the same CloudWatch data — alarms evaluate metrics on
+        their own schedule whether or not anyone has the dashboard open.
+      </p>
+
+      <h3 style="margin-top:32px;">Request lifecycle</h3>
+      <ol style="color:var(--ink-soft); max-width:720px;">
+        <li>Client calls API Gateway over HTTPS.</li>
+        <li>API Gateway invokes Lambda via a proxy integration.</li>
+        <li>Lambda captures request context (request ID, route, method).</li>
+        <li>Lambda emits structured JSON logs.</li>
+        <li>Lambda emits custom application metrics (EMF).</li>
+        <li>AWS automatically publishes Lambda metrics.</li>
+        <li>AWS automatically publishes API Gateway metrics.</li>
+        <li>CloudWatch stores and aggregates all of it.</li>
+        <li>The dashboard visualizes current operational health on demand.</li>
+        <li>Alarms evaluate thresholds independently, on their own period.</li>
+        <li>An alarm state change publishes a notification to SNS.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 5. Structured JSON logging -->
+  <section id="logging">
+    <div class="wrap">
+      <p class="eyebrow">Structured logging</p>
+      <h2>Every log line is a JSON object, not a sentence</h2>
+      <p class="section-intro">
+        A structured log line can be filtered, aggregated, and correlated
+        with CloudWatch Logs Insights. A free-text sentence can only be
+        read.
+      </p>
+
+      <div class="compare">
+        <div class="bad">
+          <div class="label">Unstructured</div>
+          <pre>Request successful</pre>
+        </div>
+        <div class="good">
+          <div class="label">Structured</div>
+          <pre>{
+  "level": "INFO",
+  "message": "Request completed",
+  "requestId": "abc-123",
+  "route": "/work",
+  "statusCode": 200,
+  "durationMs": 245
+}</pre>
+        </div>
+      </div>
+
+      <div class="grid cols-3" style="margin-top:24px;">
+        <div class="card">
+          <h3>Correlation IDs</h3>
+          <p>
+            Every log line includes <code>requestId</code>, taken from the
+            API Gateway request ID. One request, one identifier, every
+            related log line tagged with it — the basis for the
+            "find everything about this request" Logs Insights query below.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Three levels, on purpose</h3>
+          <p>
+            <code>INFO</code> for normal completion, <code>WARN</code> for
+            handled-but-unexpected input, <code>ERROR</code> for failed
+            requests. No elaborate logging-level framework.
+          </p>
+        </div>
+        <div class="card">
+          <h3>What's never logged</h3>
+          <p>
+            Authorization headers, credentials, full request headers, or
+            raw user payloads. Structured logging means useful operational
+            context in a predictable shape — not "log everything."
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 & 7. Metrics / AWS-managed vs custom -->
+  <section id="metrics">
+    <div class="wrap">
+      <p class="eyebrow">Metrics</p>
+      <h2>Three categories, deliberately kept distinct</h2>
+      <p class="section-intro">
+        AWS publishes some metrics automatically. The application publishes
+        a small number of custom metrics. Both live in CloudWatch, mapped
+        below to the golden-signal categories.
+      </p>
+
+      <div class="grid cols-4">
+        <div class="card">
+          <h3>Traffic</h3>
+          <ul class="metric-list">
+            <li>API Gateway <code>Count</code></li>
+            <li>Lambda <code>Invocations</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Latency</h3>
+          <ul class="metric-list">
+            <li>API Gateway <code>Latency</code></li>
+            <li>Lambda <code>Duration</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Errors</h3>
+          <ul class="metric-list">
+            <li>API Gateway <code>5XXError</code></li>
+            <li>Lambda <code>Errors</code></li>
+            <li>Custom <code>FailedRequests</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Application</h3>
+          <ul class="metric-list">
+            <li>Custom <code>WorkDuration</code></li>
+            <li>Custom <code>SuccessfulRequests</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 style="margin-top:32px;">AWS-managed vs. custom</h3>
+      <table>
+        <thead>
+          <tr><th>Source</th><th>Examples</th><th>How it's produced</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>AWS-managed (Lambda)</td>
+            <td><code>Invocations</code>, <code>Errors</code>, <code>Duration</code>, <code>Throttles</code>, <code>ConcurrentExecutions</code></td>
+            <td>Published automatically — no application code required</td>
+          </tr>
+          <tr>
+            <td>AWS-managed (API Gateway)</td>
+            <td><code>Count</code>, <code>Latency</code>, <code>IntegrationLatency</code>, <code>4XXError</code>, <code>5XXError</code></td>
+            <td>Published automatically for the REST API and stage</td>
+          </tr>
+          <tr>
+            <td>Custom application metrics</td>
+            <td><code>SuccessfulRequests</code>, <code>FailedRequests</code>, <code>WorkDuration</code></td>
+            <td>Embedded Metric Format (EMF) log lines, namespace <code>ObservableServerlessApi</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="note" style="margin-top:20px;">
+        Custom metric dimensions are limited to <code>Environment</code> and
+        <code>Operation</code> (three fixed values). Never use
+        <code>requestId</code>, <code>userId</code>, or <code>email</code>
+        as a dimension — each unique value becomes its own billable,
+        permanent metric time series.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8. CloudWatch dashboard -->
+  <section id="dashboard">
+    <div class="wrap">
+      <p class="eyebrow">CloudWatch dashboard</p>
+      <h2>A curated operational view, not a metric catalog</h2>
+      <p class="section-intro">
+        The deployed dashboard (<code>&lt;stack-name&gt;-observability</code>)
+        is organized into three rows. The cards below are a conceptual
+        summary of what it shows — the deployed CloudWatch dashboard is the
+        live, authoritative source.
+      </p>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <h3>API Health</h3>
+          <ul class="metric-list">
+            <li>API Requests</li>
+            <li>API Latency</li>
+            <li>API 4XX / 5XX Errors</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Lambda Health</h3>
+          <ul class="metric-list">
+            <li>Lambda Invocations</li>
+            <li>Lambda Errors</li>
+            <li>Lambda Duration + Throttles</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Application Metrics</h3>
+          <ul class="metric-list">
+            <li>Successful Requests</li>
+            <li>Failed Requests</li>
+            <li>Application Work Duration</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. CloudWatch alarms -->
+  <section id="alarms">
+    <div class="wrap">
+      <p class="eyebrow">CloudWatch alarms</p>
+      <h2>An alarm is only useful if it's actionable</h2>
+      <p class="section-intro">
+        <strong>An alarm without a clear response procedure is operational
+        noise.</strong> Every alarm here is intentionally sensitive for
+        demonstration purposes, and every one links to a runbook.
+      </p>
+
+      <div class="flow">
+        <div class="step">Metric</div>
+        <div class="arrow-down">↓</div>
+        <div class="step">Threshold exceeded</div>
+        <div class="arrow-down">↓</div>
+        <div class="step">CloudWatch Alarm → ALARM</div>
+        <div class="arrow-down">↓</div>
+        <div class="step">Amazon SNS</div>
+        <div class="arrow-down">↓</div>
+        <div class="step">Operator (email, or manual subscription)</div>
+      </div>
+
+      <table style="margin-top:24px;">
+        <thead>
+          <tr><th>Alarm</th><th>Metric</th><th>Statistic</th><th>Threshold</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Lambda errors</td><td><code>AWS/Lambda Errors</code></td><td>Sum</td><td>&ge; 1</td></tr>
+          <tr><td>Lambda duration</td><td><code>AWS/Lambda Duration</code></td><td>Average</td><td>&gt; 1500 ms</td></tr>
+          <tr><td>API 5xx</td><td><code>AWS/ApiGateway 5XXError</code></td><td>Sum</td><td>&ge; 1</td></tr>
+          <tr><td>API latency</td><td><code>AWS/ApiGateway Latency</code></td><td>Average</td><td>&gt; 1500 ms</td></tr>
+        </tbody>
+      </table>
+      <p class="section-intro" style="margin-top:16px;">
+        Every alarm uses a 1-minute period, 1 evaluation period, and
+        treats missing data as <code>notBreaching</code> — a quiet minute
+        on a low-traffic demo API isn't evidence of a problem. All four
+        notify a single SNS topic.
+      </p>
+    </div>
+  </section>
+
+  <!-- 11 & 12. Failure + latency simulation -->
+  <section id="simulation">
+    <div class="wrap">
+      <p class="eyebrow">Demonstration mechanisms</p>
+      <h2>Generate real signals on demand</h2>
+      <p class="section-intro">
+        <code>GET /work</code> supports two query parameters that exist
+        <strong>solely for demonstration and testing</strong> — never ship
+        a caller-controlled failure/delay switch in a real API.
+      </p>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Latency simulation</h3>
+          <p><code>GET /work?delayMs=2000</code></p>
+          <p>The handler awaits a bounded delay, clamped server-side to a
+          maximum of 5000ms, before responding. Drives API Latency and
+          Lambda Duration up for that minute.</p>
+        </div>
+        <div class="card">
+          <h3>Failure simulation</h3>
+          <p><code>GET /work?fail=true</code></p>
+          <p>The handler logs a structured <code>ERROR</code> entry, then
+          throws. This produces a Lambda <code>Errors</code> data point
+          <em>and</em> an API Gateway <code>502</code> (counted in
+          <code>5XXError</code>) — one simulated failure, two real
+          signals.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13. Logs Insights examples -->
+  <section id="logs-insights">
+    <div class="wrap">
+      <p class="eyebrow">CloudWatch Logs Insights</p>
+      <h2>Query the structured logs directly</h2>
+      <p class="section-intro">
+        These queries match the JSON log fields shown earlier.
+      </p>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <h3>Errors, most recent first</h3>
+          <pre>fields @timestamp, requestId, message, route, statusCode
+| filter level = "ERROR"
+| sort @timestamp desc
+| limit 50</pre>
+        </div>
+        <div class="card">
+          <h3>Slow requests</h3>
+          <pre>fields @timestamp, requestId, route, durationMs
+| filter durationMs > 1000
+| sort durationMs desc
+| limit 50</pre>
+        </div>
+        <div class="card">
+          <h3>One request, full story</h3>
+          <pre>fields @timestamp, level, message, requestId, route, durationMs
+| filter requestId = "REQUEST_ID_HERE"
+| sort @timestamp asc</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9b. SNS notifications -->
+  <section id="sns">
+    <div class="wrap">
+      <p class="eyebrow">SNS notifications</p>
+      <h2>Alarms notify a single SNS topic</h2>
+      <p class="section-intro">
+        No email address is hardcoded anywhere in this project. Subscribe
+        one optionally at deploy time:
+      </p>
+      <pre>npx cdk deploy -c alarmEmail=you@example.com</pre>
+      <p class="note">
+        SNS email subscriptions require confirmation. Check the inbox for
+        a confirmation link — no notifications are delivered until it's
+        clicked.
+      </p>
+    </div>
+  </section>
+
+  <!-- 14. Operational runbooks -->
+  <section id="runbooks">
+    <div class="wrap">
+      <p class="eyebrow">Operational runbooks</p>
+      <h2>An alarm says something's wrong. A runbook says what to do.</h2>
+      <div class="card" style="max-width:640px;">
+        <h3>Alarm: High API Latency</h3>
+        <ol style="color:var(--ink-soft); margin:10px 0 0; padding-left:18px;">
+          <li>Check API Gateway Latency</li>
+          <li>Compare IntegrationLatency</li>
+          <li>Check Lambda Duration</li>
+          <li>Look for Throttles</li>
+          <li>Query slow requests in Logs Insights</li>
+          <li>Validate recovery once metrics normalize</li>
+        </ol>
+        <p style="margin-top:12px;"><a href="../docs/runbooks/high-latency.md">Full runbook →</a></p>
+      </div>
+      <p style="margin-top:16px;">
+        Also see: <a href="../docs/runbooks/high-error-rate.md">High Error Rate runbook</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- 15 & 16. Metrics vs logs vs alarms + golden signals -->
+  <section id="signals">
+    <div class="wrap">
+      <p class="eyebrow">Mental model</p>
+      <h2>Metrics, logs, alarms, dashboards, and runbooks answer different questions</h2>
+
+      <div class="signal-row"><div class="signal-badge">Metrics</div><div>What is happening over time?</div></div>
+      <div class="signal-row"><div class="signal-badge">Alarms</div><div>When should someone pay attention?</div></div>
+      <div class="signal-row"><div class="signal-badge">Dashboards</div><div>What is the current operational picture?</div></div>
+      <div class="signal-row"><div class="signal-badge">Logs</div><div>What happened inside a specific request?</div></div>
+      <div class="signal-row"><div class="signal-badge">Runbooks</div><div>What should an operator do next?</div></div>
+
+      <h3 style="margin-top:32px;">Golden signals, simplified for serverless</h3>
+      <table>
+        <tbody>
+          <tr><td><strong>Latency</strong></td><td>API Gateway Latency / Lambda Duration</td></tr>
+          <tr><td><strong>Traffic</strong></td><td>API Gateway Count / Lambda Invocations</td></tr>
+          <tr><td><strong>Errors</strong></td><td>API Gateway 5XX / Lambda Errors / custom FailedRequests</td></tr>
+          <tr><td><strong>Saturation</strong></td><td>Lambda Throttles / ConcurrentExecutions</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 17. Resources created -->
+  <section id="resources">
+    <div class="wrap">
+      <p class="eyebrow">What CDK deploys</p>
+      <h2>Resources created</h2>
+      <table>
+        <tbody>
+          <tr><td>API Gateway REST API</td><td>3 routes, 1 stage (<code>prod</code>)</td></tr>
+          <tr><td>Lambda function</td><td>Node.js 22.x, ARM64, 128MB, 10s timeout</td></tr>
+          <tr><td>2 CloudWatch log groups</td><td>Lambda logs + API access logs, 7-day retention</td></tr>
+          <tr><td>CloudWatch dashboard</td><td>API / Lambda / Application rows + alarm status</td></tr>
+          <tr><td>4 CloudWatch alarms</td><td>Lambda errors, Lambda duration, API 5xx, API latency</td></tr>
+          <tr><td>1 SNS topic</td><td>Alarm notifications, optional email subscription</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 18 & 19. Cost + production considerations -->
+  <section id="cost-prod">
+    <div class="wrap">
+      <p class="eyebrow">Cost &amp; production readiness</p>
+      <h2>Observability has a cost — and a ceiling on how far this sample goes</h2>
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Cost drivers</h3>
+          <p>API requests, Lambda invocation/duration, CloudWatch Logs
+          ingestion &amp; storage, custom metric storage, one dashboard,
+          four alarms, SNS notifications. More telemetry is not
+          automatically better telemetry — see
+          <a href="../docs/cost-considerations.md">docs/cost-considerations.md</a>.</p>
+        </div>
+        <div class="card">
+          <h3>Recommended for production</h3>
+          <p>Authentication, WAF, error-rate (not absolute) alarms,
+          p90/p95/p99 latency, SLOs/SLIs, AWS X-Ray or OpenTelemetry
+          tracing, centralized logging, incident tooling integration. See
+          <a href="../README.md#what-would-change-for-production">README production section</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 20. Try it yourself -->
+  <section id="try-it">
+    <div class="wrap">
+      <p class="eyebrow">Try it yourself</p>
+      <h2>Run the full loop in a few commands</h2>
+      <div class="cta">
+        <pre>npx cdk deploy
+
+curl "$API_URL/health"
+curl "$API_URL/hello"
+curl "$API_URL/work?delayMs=2000"
+curl "$API_URL/work?fail=true"</pre>
+        <p style="margin-top:12px; color:#c7d2e0;">
+          Then open the CloudWatch dashboard, query the logs, watch an
+          alarm fire, and follow the matching runbook.
+        </p>
+        <a class="button" href="../README.md#demo-walkthrough">Full walkthrough in the README →</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      This is an educational sample. See the
+      <a href="../README.md">README</a> for full setup, deployment, and
+      teardown instructions, and <a href="../docs/architecture.md">docs/architecture.md</a>
+      for design decisions behind each choice on this page.
+    </div>
+  </footer>
+
+</body>
+</html>
