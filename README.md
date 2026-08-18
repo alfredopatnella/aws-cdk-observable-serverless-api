@@ -2,6 +2,8 @@
 
 ### API Gateway → Lambda → CloudWatch → SNS
 
+🌐 Language: **English** | [Español](README.es.md)
+
 This repository demonstrates how to add practical observability to a
 small AWS serverless API using logs, metrics, dashboards, alarms,
 notifications, and runbooks.

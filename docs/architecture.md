@@ -1,5 +1,7 @@
 # Architecture
 
+🌐 Language: **English** | [Español](es/architecture.md)
+
 This document describes how the pieces of this sample fit together: the
 system context, the telemetry pipeline, the request lifecycle, and the
 design decisions behind the observability configuration. For a quicker
@@ -197,7 +199,7 @@ This is deliberately **sensitive** -- a single error or a single slow
 minute is enough to trip an alarm. That is appropriate for a lab
 environment where you want to see the alarm fire on demand, and
 inappropriate for most production services. See
-[Production considerations](#production-considerations) below and the
+[Production evolution](#production-evolution) below and the
 [README's production section](../README.md#what-would-change-for-production)
 for what a more realistic configuration looks like.
 

@@ -1,5 +1,7 @@
 # Troubleshooting
 
+🌐 Language: **English** | [Español](es/troubleshooting.md)
+
 Practical, symptom-first workflows for this project. For step-by-step
 incident procedures tied to the two alarms, see the runbooks in
 `docs/runbooks/`. This document is broader: it covers situations that

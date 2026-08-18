@@ -1,5 +1,7 @@
 # Runbook: High Error Rate
 
+🌐 Language: **English** | [Español](../es/runbooks/high-error-rate.md)
+
 > An alarm tells an operator that something may be wrong. A runbook tells
 > the operator what to do next.
 

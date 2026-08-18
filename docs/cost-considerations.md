@@ -1,5 +1,7 @@
 # Cost Considerations
 
+🌐 Language: **English** | [Español](es/cost-considerations.md)
+
 **Observability has a cost.** Every log line, every custom metric, every
 alarm, and every dashboard is a billable AWS resource or a contributor to
 a billable resource. More telemetry is not automatically better telemetry

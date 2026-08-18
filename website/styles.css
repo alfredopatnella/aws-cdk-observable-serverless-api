@@ -84,6 +84,20 @@ nav.links a:hover {
   color: var(--accent);
 }
 
+nav.links a.lang-switch {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
+nav.links a.lang-switch:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Hero */
 .hero {
   padding: 64px 0 48px;

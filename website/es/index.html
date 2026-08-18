@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>API Serverless Observable — Muestra de AWS CDK</title>
+  <meta name="description" content="Una muestra educativa de AWS CDK que enseña observabilidad para APIs serverless: logs estructurados, métricas personalizadas, paneles, alarmas y runbooks." />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+
+  <header class="site-nav">
+    <div class="wrap">
+      <div class="brand">API Serverless Observable</div>
+      <nav class="links">
+        <a href="#why">Por qué</a>
+        <a href="#architecture">Arquitectura</a>
+        <a href="#logging">Logs</a>
+        <a href="#metrics">Métricas</a>
+        <a href="#dashboard">Panel</a>
+        <a href="#alarms">Alarmas</a>
+        <a href="#runbooks">Runbooks</a>
+        <a href="#try-it">Pruébalo</a>
+        <a href="../index.html" class="lang-switch">EN | ES</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- 1. Hero -->
+  <section class="hero">
+    <div class="wrap">
+      <h1>Observabilidad para una API serverless en AWS</h1>
+      <p class="subtitle">API Gateway → Lambda → CloudWatch → SNS</p>
+      <p class="lede">
+        Aprende cómo los logs estructurados, las métricas personalizadas,
+        los paneles, las alarmas y los runbooks operativos convierten una
+        API serverless simple en algo que los operadores realmente pueden
+        entender y soportar. La API en sí es deliberadamente pequeña --
+        tres rutas, una función Lambda. La observabilidad es el tema
+        central de este proyecto.
+      </p>
+      <div class="tags">
+        <span class="tag">AWS CDK</span>
+        <span class="tag">API Gateway</span>
+        <span class="tag">Lambda</span>
+        <span class="tag">CloudWatch</span>
+        <span class="tag">SNS</span>
+        <span class="tag">TypeScript</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. Por qué importa la observabilidad -->
+  <section id="why">
+    <div class="wrap">
+      <p class="eyebrow">Por qué importa</p>
+      <h2>Desplegar una API no es lo mismo que operarla</h2>
+      <p class="section-intro">
+        Levantar <code>Cliente → API Gateway → Lambda</code> toma muy poco
+        esfuerzo. Responder las preguntas que se hace un operador en el
+        momento en que algo se ve mal requiere un trabajo de diseño real.
+      </p>
+      <div class="grid cols-3">
+        <div class="card"><h3>¿Está disponible?</h3><p>Las métricas de tráfico y errores responden esto en segundos, sin adivinar.</p></div>
+        <div class="card"><h3>¿Está fallando?</h3><p><code>Errors</code> de Lambda y <code>5XXError</code> de API Gateway deberían coincidir entre sí.</p></div>
+        <div class="card"><h3>¿Se está volviendo más lenta?</h3><p>Las tendencias de latencia y duración detectan regresiones antes de que los usuarios se quejen.</p></div>
+        <div class="card"><h3>¿Cuánto tráfico?</h3><p><code>Count</code> e <code>Invocations</code> establecen cómo se ve lo "normal".</p></div>
+        <div class="card"><h3>¿Aislado o generalizado?</h3><p>Las métricas personalizadas por ruta separan una ruta problemática de un despliegue problemático.</p></div>
+        <div class="card"><h3>¿Pueden los operadores diagnosticarlo?</h3><p>Logs estructurados y correlacionados, más un runbook -- no conjeturas.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 & 4. Arquitectura + Ciclo de vida de la solicitud -->
+  <section id="architecture">
+    <div class="wrap">
+      <p class="eyebrow">Arquitectura</p>
+      <h2>Solicitud → telemetría → CloudWatch → alarma → operador</h2>
+      <p class="section-intro">
+        Cada solicitud produce dos flujos paralelos de telemetría que
+        terminan ambos en CloudWatch, el cual alimenta un panel para
+        humanos y alarmas para atención automatizada.
+      </p>
+
+      <div class="arch-diagram">
+        <div class="arch-node">Cliente</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-node">API Gateway</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-node">Lambda</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-branch">
+          <div class="branch-col">
+            <div class="arch-node">Logs estructurados</div>
+          </div>
+          <div class="branch-col">
+            <div class="arch-node">Métricas personalizadas</div>
+          </div>
+        </div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-node accent">Amazon CloudWatch</div>
+        <div class="arch-arrow">↓</div>
+        <div class="arch-branch">
+          <div class="branch-col">
+            <div class="arch-node">Panel</div>
+          </div>
+          <div class="branch-col">
+            <div class="arch-node">Alarmas</div>
+            <div class="arch-arrow">↓</div>
+            <div class="arch-node">Amazon SNS</div>
+          </div>
+        </div>
+      </div>
+
+      <p class="note">
+        El panel no dispara las alarmas. Ambos son consumidores
+        independientes de los mismos datos de CloudWatch -- las alarmas
+        evalúan las métricas según su propio cronograma, sin importar si
+        alguien tiene el panel abierto o no.
+      </p>
+
+      <h3 style="margin-top:32px;">Ciclo de vida de la solicitud</h3>
+      <ol style="color:var(--ink-soft); max-width:720px;">
+        <li>El cliente llama a API Gateway sobre HTTPS.</li>
+        <li>API Gateway invoca a Lambda mediante una integración proxy.</li>
+        <li>Lambda captura el contexto de la solicitud (ID de solicitud, ruta, método).</li>
+        <li>Lambda emite logs JSON estructurados.</li>
+        <li>Lambda emite métricas personalizadas de la aplicación (EMF).</li>
+        <li>AWS publica automáticamente las métricas de Lambda.</li>
+        <li>AWS publica automáticamente las métricas de API Gateway.</li>
+        <li>CloudWatch almacena y agrega todo.</li>
+        <li>El panel visualiza el estado operativo actual bajo demanda.</li>
+        <li>Las alarmas evalúan los umbrales de forma independiente, según su propio período.</li>
+        <li>Un cambio de estado de una alarma publica una notificación a SNS.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 5. Registro estructurado en JSON -->
+  <section id="logging">
+    <div class="wrap">
+      <p class="eyebrow">Registro estructurado</p>
+      <h2>Cada línea de log es un objeto JSON, no una frase</h2>
+      <p class="section-intro">
+        Una línea de log estructurada se puede filtrar, agregar y
+        correlacionar con CloudWatch Logs Insights. Una frase de texto
+        libre solo se puede leer.
+      </p>
+
+      <div class="compare">
+        <div class="bad">
+          <div class="label">Sin estructura</div>
+          <pre>Request successful</pre>
+        </div>
+        <div class="good">
+          <div class="label">Estructurado</div>
+          <pre>{
+  "level": "INFO",
+  "message": "Request completed",
+  "requestId": "abc-123",
+  "route": "/work",
+  "statusCode": 200,
+  "durationMs": 245
+}</pre>
+        </div>
+      </div>
+
+      <div class="grid cols-3" style="margin-top:24px;">
+        <div class="card">
+          <h3>Identificadores de correlación</h3>
+          <p>
+            Cada línea de log incluye <code>requestId</code>, tomado del
+            ID de solicitud de API Gateway. Una solicitud, un
+            identificador, cada línea de log relacionada etiquetada con
+            él -- la base de la consulta de Logs Insights "encuentra todo
+            sobre esta solicitud" que se muestra más abajo.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Tres niveles, a propósito</h3>
+          <p>
+            <code>INFO</code> para finalización normal, <code>WARN</code>
+            para entradas inesperadas pero manejadas, <code>ERROR</code>
+            para solicitudes fallidas. Sin un framework elaborado de
+            niveles de logging.
+          </p>
+        </div>
+        <div class="card">
+          <h3>Lo que nunca se registra</h3>
+          <p>
+            Headers de autorización, credenciales, headers completos de
+            la solicitud, o payloads sin procesar del usuario. Registro
+            estructurado significa contexto operativo útil en una forma
+            predecible -- no "registrar todo."
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 & 7. Métricas / administradas por AWS vs. personalizadas -->
+  <section id="metrics">
+    <div class="wrap">
+      <p class="eyebrow">Métricas</p>
+      <h2>Tres categorías, mantenidas deliberadamente separadas</h2>
+      <p class="section-intro">
+        AWS publica algunas métricas automáticamente. La aplicación
+        publica un pequeño número de métricas personalizadas. Ambas viven
+        en CloudWatch, mapeadas más abajo a las categorías de señales
+        doradas.
+      </p>
+
+      <div class="grid cols-4">
+        <div class="card">
+          <h3>Tráfico</h3>
+          <ul class="metric-list">
+            <li>API Gateway <code>Count</code></li>
+            <li>Lambda <code>Invocations</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Latencia</h3>
+          <ul class="metric-list">
+            <li>API Gateway <code>Latency</code></li>
+            <li>Lambda <code>Duration</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Errores</h3>
+          <ul class="metric-list">
+            <li>API Gateway <code>5XXError</code></li>
+            <li>Lambda <code>Errors</code></li>
+            <li>Personalizada <code>FailedRequests</code></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Aplicación</h3>
+          <ul class="metric-list">
+            <li>Personalizada <code>WorkDuration</code></li>
+            <li>Personalizada <code>SuccessfulRequests</code></li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 style="margin-top:32px;">Administradas por AWS vs. personalizadas</h3>
+      <table>
+        <thead>
+          <tr><th>Origen</th><th>Ejemplos</th><th>Cómo se produce</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Administradas por AWS (Lambda)</td>
+            <td><code>Invocations</code>, <code>Errors</code>, <code>Duration</code>, <code>Throttles</code>, <code>ConcurrentExecutions</code></td>
+            <td>Publicadas automáticamente — no requiere código de la aplicación</td>
+          </tr>
+          <tr>
+            <td>Administradas por AWS (API Gateway)</td>
+            <td><code>Count</code>, <code>Latency</code>, <code>IntegrationLatency</code>, <code>4XXError</code>, <code>5XXError</code></td>
+            <td>Publicadas automáticamente para la REST API y el stage</td>
+          </tr>
+          <tr>
+            <td>Métricas personalizadas de la aplicación</td>
+            <td><code>SuccessfulRequests</code>, <code>FailedRequests</code>, <code>WorkDuration</code></td>
+            <td>Líneas de log en Embedded Metric Format (EMF), namespace <code>ObservableServerlessApi</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="note" style="margin-top:20px;">
+        Las dimensiones de las métricas personalizadas se limitan a
+        <code>Environment</code> y <code>Operation</code> (tres valores
+        fijos). Nunca uses <code>requestId</code>, <code>userId</code>, o
+        <code>email</code> como dimensión — cada valor único se convierte
+        en su propia serie temporal de métrica, facturable y permanente.
+      </p>
+    </div>
+  </section>
+
+  <!-- 8. Panel de CloudWatch -->
+  <section id="dashboard">
+    <div class="wrap">
+      <p class="eyebrow">Panel de CloudWatch</p>
+      <h2>Una vista operativa curada, no un catálogo de métricas</h2>
+      <p class="section-intro">
+        El panel desplegado (<code>&lt;stack-name&gt;-observability</code>)
+        está organizado en tres filas. Las tarjetas de abajo son un
+        resumen conceptual de lo que muestra — el panel de CloudWatch
+        desplegado es la fuente autoritativa en vivo.
+      </p>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <h3>Salud de la API</h3>
+          <ul class="metric-list">
+            <li>API Requests</li>
+            <li>API Latency</li>
+            <li>API 4XX / 5XX Errors</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Salud de Lambda</h3>
+          <ul class="metric-list">
+            <li>Lambda Invocations</li>
+            <li>Lambda Errors</li>
+            <li>Lambda Duration + Throttles</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Métricas de la aplicación</h3>
+          <ul class="metric-list">
+            <li>Successful Requests</li>
+            <li>Failed Requests</li>
+            <li>Application Work Duration</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. Alarmas de CloudWatch -->
+  <section id="alarms">
+    <div class="wrap">
+      <p class="eyebrow">Alarmas de CloudWatch</p>
+      <h2>Una alarma solo es útil si es accionable</h2>
+      <p class="section-intro">
+        <strong>Una alarma sin un procedimiento de respuesta claro es
+        ruido operativo.</strong> Cada alarma aquí es intencionalmente
+        sensible con fines de demostración, y cada una enlaza a un
+        runbook.
+      </p>
+
+      <div class="flow">
+        <div class="step">Métrica</div>
+        <div class="arrow-down">↓</div>
+        <div class="step">Umbral superado</div>
+        <div class="arrow-down">↓</div>
+        <div class="step">Alarma de CloudWatch → ALARM</div>
+        <div class="arrow-down">↓</div>
+        <div class="step">Amazon SNS</div>
+        <div class="arrow-down">↓</div>
+        <div class="step">Operador (email, o suscripción manual)</div>
+      </div>
+
+      <table style="margin-top:24px;">
+        <thead>
+          <tr><th>Alarma</th><th>Métrica</th><th>Estadística</th><th>Umbral</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Errores de Lambda</td><td><code>AWS/Lambda Errors</code></td><td>Sum</td><td>&ge; 1</td></tr>
+          <tr><td>Duración de Lambda</td><td><code>AWS/Lambda Duration</code></td><td>Average</td><td>&gt; 1500 ms</td></tr>
+          <tr><td>5xx de la API</td><td><code>AWS/ApiGateway 5XXError</code></td><td>Sum</td><td>&ge; 1</td></tr>
+          <tr><td>Latencia de la API</td><td><code>AWS/ApiGateway Latency</code></td><td>Average</td><td>&gt; 1500 ms</td></tr>
+        </tbody>
+      </table>
+      <p class="section-intro" style="margin-top:16px;">
+        Cada alarma usa un período de 1 minuto, 1 período de evaluación, y
+        trata los datos faltantes como <code>notBreaching</code> — un
+        minuto sin actividad en una API de demostración de bajo tráfico
+        no es evidencia de un problema. Las cuatro notifican a un único
+        topic de SNS.
+      </p>
+    </div>
+  </section>
+
+  <!-- 11 & 12. Simulación de fallo + latencia -->
+  <section id="simulation">
+    <div class="wrap">
+      <p class="eyebrow">Mecanismos de demostración</p>
+      <h2>Genera señales reales a demanda</h2>
+      <p class="section-intro">
+        <code>GET /work</code> admite dos parámetros de consulta que
+        existen <strong>únicamente para demostración y pruebas</strong> —
+        nunca expongas en una API real un interruptor de fallo/retraso
+        controlado por quien llama.
+      </p>
+
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Simulación de latencia</h3>
+          <p><code>GET /work?delayMs=2000</code></p>
+          <p>El handler espera un retraso acotado, limitado del lado del
+          servidor a un máximo de 5000ms, antes de responder. Hace subir
+          API Latency y Lambda Duration durante ese minuto.</p>
+        </div>
+        <div class="card">
+          <h3>Simulación de fallo</h3>
+          <p><code>GET /work?fail=true</code></p>
+          <p>El handler registra una entrada <code>ERROR</code>
+          estructurada, y luego lanza una excepción. Esto produce un
+          punto de datos de <code>Errors</code> en Lambda
+          <em>y</em> un <code>502</code> de API Gateway (contabilizado en
+          <code>5XXError</code>) — un solo fallo simulado, dos señales
+          reales.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 13. Ejemplos de Logs Insights -->
+  <section id="logs-insights">
+    <div class="wrap">
+      <p class="eyebrow">CloudWatch Logs Insights</p>
+      <h2>Consulta los logs estructurados directamente</h2>
+      <p class="section-intro">
+        Estas consultas coinciden con los campos de log JSON mostrados
+        más arriba.
+      </p>
+
+      <div class="grid cols-3">
+        <div class="card">
+          <h3>Errores, más recientes primero</h3>
+          <pre>fields @timestamp, requestId, message, route, statusCode
+| filter level = "ERROR"
+| sort @timestamp desc
+| limit 50</pre>
+        </div>
+        <div class="card">
+          <h3>Solicitudes lentas</h3>
+          <pre>fields @timestamp, requestId, route, durationMs
+| filter durationMs > 1000
+| sort durationMs desc
+| limit 50</pre>
+        </div>
+        <div class="card">
+          <h3>Una solicitud, la historia completa</h3>
+          <pre>fields @timestamp, level, message, requestId, route, durationMs
+| filter requestId = "REQUEST_ID_HERE"
+| sort @timestamp asc</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9b. Notificaciones SNS -->
+  <section id="sns">
+    <div class="wrap">
+      <p class="eyebrow">Notificaciones de SNS</p>
+      <h2>Las alarmas notifican a un único topic de SNS</h2>
+      <p class="section-intro">
+        No hay ninguna dirección de correo codificada de forma fija en
+        este proyecto. Suscribe una de forma opcional al momento del
+        despliegue:
+      </p>
+      <pre>npx cdk deploy -c alarmEmail=you@example.com</pre>
+      <p class="note">
+        Las suscripciones por email de SNS requieren confirmación. Revisa
+        la bandeja de entrada en busca de un enlace de confirmación — no
+        se entregan notificaciones hasta hacer clic en él.
+      </p>
+    </div>
+  </section>
+
+  <!-- 14. Runbooks operativos -->
+  <section id="runbooks">
+    <div class="wrap">
+      <p class="eyebrow">Runbooks operativos</p>
+      <h2>Una alarma dice que algo está mal. Un runbook dice qué hacer.</h2>
+      <div class="card" style="max-width:640px;">
+        <h3>Alarma: Latencia elevada de la API</h3>
+        <ol style="color:var(--ink-soft); margin:10px 0 0; padding-left:18px;">
+          <li>Revisar API Gateway Latency</li>
+          <li>Comparar con IntegrationLatency</li>
+          <li>Revisar Lambda Duration</li>
+          <li>Buscar Throttles</li>
+          <li>Consultar solicitudes lentas en Logs Insights</li>
+          <li>Validar la recuperación una vez que las métricas se normalicen</li>
+        </ol>
+        <p style="margin-top:12px;"><a href="../../docs/es/runbooks/high-latency.md">Runbook completo →</a></p>
+      </div>
+      <p style="margin-top:16px;">
+        Consulta también: <a href="../../docs/es/runbooks/high-error-rate.md">Runbook de tasa de errores elevada</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- 15 & 16. Métricas vs logs vs alarmas + señales doradas -->
+  <section id="signals">
+    <div class="wrap">
+      <p class="eyebrow">Modelo mental</p>
+      <h2>Métricas, logs, alarmas, paneles y runbooks responden preguntas distintas</h2>
+
+      <div class="signal-row"><div class="signal-badge">Métricas</div><div>¿Qué está pasando a lo largo del tiempo?</div></div>
+      <div class="signal-row"><div class="signal-badge">Alarmas</div><div>¿Cuándo debería alguien prestar atención?</div></div>
+      <div class="signal-row"><div class="signal-badge">Paneles</div><div>¿Cuál es el panorama operativo actual?</div></div>
+      <div class="signal-row"><div class="signal-badge">Logs</div><div>¿Qué pasó dentro de una solicitud específica?</div></div>
+      <div class="signal-row"><div class="signal-badge">Runbooks</div><div>¿Qué debería hacer un operador a continuación?</div></div>
+
+      <h3 style="margin-top:32px;">Señales doradas, simplificadas para serverless</h3>
+      <table>
+        <tbody>
+          <tr><td><strong>Latencia</strong></td><td>API Gateway Latency / Lambda Duration</td></tr>
+          <tr><td><strong>Tráfico</strong></td><td>API Gateway Count / Lambda Invocations</td></tr>
+          <tr><td><strong>Errores</strong></td><td>API Gateway 5XX / Lambda Errors / FailedRequests personalizada</td></tr>
+          <tr><td><strong>Saturación</strong></td><td>Lambda Throttles / ConcurrentExecutions</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 17. Recursos creados -->
+  <section id="resources">
+    <div class="wrap">
+      <p class="eyebrow">Qué despliega CDK</p>
+      <h2>Recursos creados</h2>
+      <table>
+        <tbody>
+          <tr><td>REST API de API Gateway</td><td>3 rutas, 1 stage (<code>prod</code>)</td></tr>
+          <tr><td>Función Lambda</td><td>Node.js 22.x, ARM64, 128MB, timeout de 10s</td></tr>
+          <tr><td>2 grupos de logs de CloudWatch</td><td>Logs de Lambda + logs de acceso de la API, retención de 7 días</td></tr>
+          <tr><td>Panel de CloudWatch</td><td>Filas de API / Lambda / Aplicación + estado de alarmas</td></tr>
+          <tr><td>4 alarmas de CloudWatch</td><td>Errores de Lambda, duración de Lambda, 5xx de la API, latencia de la API</td></tr>
+          <tr><td>1 topic de SNS</td><td>Notificaciones de alarmas, suscripción por email opcional</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 18 & 19. Costos + consideraciones para producción -->
+  <section id="cost-prod">
+    <div class="wrap">
+      <p class="eyebrow">Costos y preparación para producción</p>
+      <h2>La observabilidad tiene un costo — y un límite hasta dónde llega esta muestra</h2>
+      <div class="grid cols-2">
+        <div class="card">
+          <h3>Factores de costo</h3>
+          <p>Solicitudes a la API, invocación/duración de Lambda, ingesta
+          y almacenamiento de CloudWatch Logs, almacenamiento de métricas
+          personalizadas, un panel, cuatro alarmas, notificaciones de
+          SNS. Más telemetría no es automáticamente mejor telemetría —
+          ver
+          <a href="../../docs/es/cost-considerations.md">docs/es/cost-considerations.md</a>.</p>
+        </div>
+        <div class="card">
+          <h3>Recomendado para producción</h3>
+          <p>Autenticación, WAF, alarmas por tasa de error (no
+          absolutas), latencia p90/p95/p99, SLOs/SLIs, trazabilidad con
+          AWS X-Ray u OpenTelemetry, registro centralizado, integración
+          con herramientas de gestión de incidentes. Ver
+          <a href="../../README.es.md#qué-cambiaría-para-producción">sección de producción del README</a>.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 20. Pruébalo tú mismo -->
+  <section id="try-it">
+    <div class="wrap">
+      <p class="eyebrow">Pruébalo tú mismo</p>
+      <h2>Ejecuta el ciclo completo en unos pocos comandos</h2>
+      <div class="cta">
+        <pre>npx cdk deploy
+
+curl "$API_URL/health"
+curl "$API_URL/hello"
+curl "$API_URL/work?delayMs=2000"
+curl "$API_URL/work?fail=true"</pre>
+        <p style="margin-top:12px; color:#c7d2e0;">
+          Luego abre el panel de CloudWatch, consulta los logs, observa
+          disparase una alarma, y sigue el runbook correspondiente.
+        </p>
+        <a class="button" href="../../README.es.md#recorrido-de-la-demostración">Recorrido completo en el README →</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      Esta es una muestra educativa. Consulta el
+      <a href="../../README.es.md">README</a> para instrucciones
+      completas de configuración, despliegue y eliminación, y
+      <a href="../../docs/es/architecture.md">docs/es/architecture.md</a>
+      para las decisiones de diseño detrás de cada elección en esta
+      página.
+    </div>
+  </footer>
+
+</body>
+</html>

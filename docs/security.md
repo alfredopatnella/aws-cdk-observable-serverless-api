@@ -1,5 +1,7 @@
 # Security
 
+🌐 Language: **English** | [Español](es/security.md)
+
 This document summarizes the trust boundaries, IAM permissions, and
 logging-related security decisions in this sample, and separates what is
 implemented here from what a production deployment should add.
@@ -13,7 +15,8 @@ Internet (unauthenticated) ──HTTPS──> API Gateway ──IAM role──> 
 
 - The API is **public and unauthenticated** by design -- this is a demo
   meant to be curled from a terminal without setting up credentials. See
-  [Production considerations](#authentication) for what changes here.
+  [Security Controls Recommended for Production](#security-controls-recommended-for-production)
+  for what changes here.
 - Traffic between a client and API Gateway is TLS-encrypted
   (`https://...execute-api...`). API Gateway REST APIs do not offer a
   plaintext HTTP option.
